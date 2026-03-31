@@ -24,6 +24,7 @@ setup(
     },
     entry_points={
         'console_scripts': [
+            'mic_whistle_node = rover_behavior.mic_whistle_ros2_node:main',
         ],
     },
 )
