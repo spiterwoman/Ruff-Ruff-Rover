@@ -25,6 +25,8 @@ setup(
     entry_points={
         'console_scripts': [
             'mic_whistle_node = rover_behavior.mic_whistle_ros2_node:main',
-            'sound_turn_controller = rover_behavior.sound_turn_controller:main',        ],
+            'sound_turn_controller = rover_behavior.sound_turn_controller:main',
+            'path_planning_node = rover_behavior.path_planning_node:main', 
+        ],
     },
 )
