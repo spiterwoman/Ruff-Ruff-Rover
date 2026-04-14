@@ -94,11 +94,11 @@ source install/setup.bash
 python3 -m pip install numpy opencv-python ultralytics
 ```
 
-Place these model files where the config expects them:
+Download and place these model files where the config expects them:
 
-- `yolo11n.pt`
-- `models/face_detection_yunet_2023mar.onnx`
-- `models/face_recognition_sface_2021dec.onnx`
+- `yolo11n.pt` in the repo root: [download](https://github.com/ultralytics/assets/releases/download/v8.3.0/yolo11n.pt)
+- `models/face_detection_yunet_2023mar.onnx` in the `models` folder: [download](https://huggingface.co/opencv/face_detection_yunet/resolve/main/face_detection_yunet_2023mar.onnx)
+- `models/face_recognition_sface_2021dec.onnx` in the `models` folder: [download](https://huggingface.co/opencv/face_recognition_sface/resolve/main/face_recognition_sface_2021dec.onnx)
 
 Main robot settings live in [src/rover_bringup/config/rover_params.yaml](./src/rover_bringup/config/rover_params.yaml).
 
