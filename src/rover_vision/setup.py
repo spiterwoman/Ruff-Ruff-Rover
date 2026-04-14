@@ -11,7 +11,12 @@ setup(
             ['resource/' + package_name]),
         ('share/' + package_name, ['package.xml']),
     ],
-    install_requires=['setuptools'],
+    install_requires=[
+        'setuptools',
+        'numpy',
+        'opencv-python',
+        'ultralytics',
+    ],
     zip_safe=True,
     maintainer='mmamd',
     maintainer_email='mmamd@todo.todo',
@@ -24,6 +29,7 @@ setup(
     },
     entry_points={
         'console_scripts': [
+            'vision_target_node = rover_vision.vision_target_node:main',
         ],
     },
 )

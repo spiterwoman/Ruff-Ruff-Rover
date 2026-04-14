@@ -56,14 +56,19 @@ DEFAULT_TOPICS=(
   /tf
   /tf_static
   /odom
+  /wheel_state
   /cmd_vel
-  /scan
-  /camera/image_raw
-  /camera/camera_info
-  /whistle/detected
-  /whistle/angle_deg
-  /whistle/peak_freq_hz
-  /whistle/event_json
+  /pico/heartbeat
+  /range/front_left
+  /range/front_right
+  /camera/ready
+  /whistle/event
+  /whistle/ready
+  /target_track
+  /vision/ready
+  /self_test/ready
+  /self_test/status
+  /behavior/state
 )
 
 RECORD_ARGS=(bag record -s "${STORAGE_ID}" -o "${BAG_PATH}")

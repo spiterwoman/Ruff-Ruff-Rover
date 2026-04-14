@@ -1,0 +1,11 @@
+bool visible
+bool face_locked
+float32 bbox_cx_px
+float32 bbox_cy_px
+float32 bbox_w_px
+float32 bbox_h_px
+float32 image_error_x_norm
+float32 bearing_deg
+float32 range_estimate_m
+float32 detection_confidence
+float32 face_similarity

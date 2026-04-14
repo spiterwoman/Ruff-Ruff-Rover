@@ -11,7 +11,12 @@ setup(
             ['resource/' + package_name]),
         ('share/' + package_name, ['package.xml']),
     ],
-    install_requires=['setuptools'],
+    install_requires=[
+        'setuptools',
+        'numpy',
+        'pyaudio',
+        'pyusb',
+    ],
     zip_safe=True,
     maintainer='mmamd',
     maintainer_email='mmamd@todo.todo',
@@ -25,8 +30,7 @@ setup(
     entry_points={
         'console_scripts': [
             'mic_whistle_node = rover_behavior.mic_whistle_ros2_node:main',
-            'sound_turn_controller = rover_behavior.sound_turn_controller:main',
-            'path_planning_node = rover_behavior.path_planning_node:main', 
+            'follow_whistler_node = rover_behavior.follow_whistler_node:main',
         ],
     },
 )

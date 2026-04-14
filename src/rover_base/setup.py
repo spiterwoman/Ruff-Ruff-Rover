@@ -11,7 +11,11 @@ setup(
             ['resource/' + package_name]),
         ('share/' + package_name, ['package.xml']),
     ],
-    install_requires=['setuptools'],
+    install_requires=[
+        'setuptools',
+        'numpy',
+        'opencv-python',
+    ],
     zip_safe=True,
     maintainer='mmamd',
     maintainer_email='mmamd@todo.todo',
@@ -24,6 +28,8 @@ setup(
     },
     entry_points={
         'console_scripts': [
+            'camera_stream_node = rover_base.camera_stream_node:main',
+            'self_test_node = rover_base.self_test_node:main',
         ],
     },
 )

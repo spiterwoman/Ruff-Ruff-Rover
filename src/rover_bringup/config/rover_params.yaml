@@ -1,0 +1,89 @@
+mic_whistle_node:
+  ros__parameters:
+    device_index: -1
+    rate: 16000
+    chunk: 1024
+    channels: 2
+    detect_channel: 0
+    band_min_hz: 1800.0
+    band_max_hz: 4500.0
+    min_rms: 700.0
+    min_band_ratio: 0.45
+    min_peak_ratio: 0.18
+    min_prominence_db: 12.0
+    consecutive_hits_required: 3
+    cooldown_s: 1.0
+    use_usb_control: true
+    doa_samples: 5
+    doa_sample_delay_s: 0.03
+    doa_offset_deg: 0.0
+    doa_clockwise_positive: true
+
+camera_stream_node:
+  ros__parameters:
+    camera_index: 0
+    frame_width: 1280
+    frame_height: 720
+    frame_rate_hz: 15.0
+    jpeg_quality: 80
+    frame_id: camera_optical_frame
+    image_topic: /camera/image/compressed
+
+vision_target_node:
+  ros__parameters:
+    use_local_camera: false
+    camera_index: 0
+    frame_width: 1280
+    frame_height: 720
+    frame_rate_hz: 15.0
+    camera_hfov_deg: 120.0
+    image_topic: /camera/image/compressed
+    image_timeout_s: 1.0
+    detect_every_n_frames: 3
+    yolo_model: yolo11n.pt
+    yolo_imgsz: 416
+    yolo_confidence: 0.35
+    person_width_m: 0.45
+    tracker_max_age_s: 1.0
+    whistle_bearing_sigma_deg: 25.0
+    face_match_threshold: 0.35
+    enable_face_reid: true
+    yunet_model_path: models/face_detection_yunet_2023mar.onnx
+    sface_model_path: models/face_recognition_sface_2021dec.onnx
+
+follow_whistler_node:
+  ros__parameters:
+    control_rate_hz: 20.0
+    turn_tolerance_deg: 10.0
+    turn_speed_rad_s: 0.7
+    search_turn_speed_rad_s: 0.55
+    search_sweep_extent_deg: 35.0
+    acquire_timeout_s: 5.0
+    reacquire_timeout_s: 8.0
+    target_timeout_s: 0.75
+    range_timeout_s: 1.0
+    arrival_range_m: 1.0
+    arrival_bbox_width_px: 560.0
+    center_tolerance_norm: 0.08
+    linear_kp: 0.5
+    angular_kp: 1.2
+    max_linear_speed_mps: 0.35
+    min_linear_speed_mps: 0.08
+    max_angular_speed_rad_s: 0.9
+    soft_avoid_distance_m: 0.60
+    hard_stop_distance_m: 0.35
+    avoid_turn_speed_rad_s: 0.7
+
+self_test_node:
+  ros__parameters:
+    startup_timeout_s: 45.0
+    heartbeat_timeout_s: 1.0
+    sensor_timeout_s: 2.0
+    pulse_speed: 0.12
+    pulse_duration_s: 0.35
+    settle_duration_s: 0.35
+    min_wheel_position_delta: 0.05
+    left_forward_sign: 1.0
+    right_forward_sign: 1.0
+    range_min_valid_m: 0.02
+    range_max_valid_m: 2.0
