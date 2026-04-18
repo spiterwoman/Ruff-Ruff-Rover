@@ -1,5 +1,5 @@
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, ExecuteProcess
+from launch.actions import DeclareLaunchArgument
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 from ament_index_python.packages import get_package_share_directory
@@ -17,9 +17,11 @@ def generate_launch_description():
     device_arg = DeclareLaunchArgument("micro_ros_device", default_value="/dev/ttyACM0")
     baud_arg = DeclareLaunchArgument("micro_ros_baud", default_value="115200")
 
-    agent = ExecuteProcess(
-        cmd=[
-            "micro_ros_agent",
+    agent = Node(
+        package="micro_ros_agent",
+        executable="micro_ros_agent",
+        name="micro_ros_agent",
+        arguments=[
             "serial",
             "--dev",
             LaunchConfiguration("micro_ros_device"),
