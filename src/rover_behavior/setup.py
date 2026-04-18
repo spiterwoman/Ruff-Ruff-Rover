@@ -13,11 +13,11 @@ setup(
     ],
     install_requires=[
         'setuptools',
-        'numpy',
-        'pyaudio',
-        'pyusb',
-    ],
-    zip_safe=True,
+            'numpy',
+            'pyaudio',
+            'pyusb',
+        ],
+        zip_safe=True,
     maintainer='mmamd',
     maintainer_email='mmamd@todo.todo',
     description='TODO: Package description',
@@ -31,6 +31,7 @@ setup(
         'console_scripts': [
             'mic_whistle_node = rover_behavior.mic_whistle_ros2_node:main',
             'follow_whistler_node = rover_behavior.follow_whistler_node:main',
+            'turn_to_whistle_test_node = rover_behavior.turn_to_whistle_test_node:main',
         ],
     },
 )

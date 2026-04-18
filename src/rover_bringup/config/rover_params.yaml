@@ -74,6 +74,14 @@ follow_whistler_node:
     hard_stop_distance_m: 0.35
     avoid_turn_speed_rad_s: 0.7
 
+turn_to_whistle_test_node:
+  ros__parameters:
+    control_rate_hz: 20.0
+    turn_tolerance_deg: 10.0
+    turn_speed_rad_s: 0.7
+    turn_timeout_s: 8.0
+    odom_timeout_s: 1.0
+
 self_test_node:
   ros__parameters:
     startup_timeout_s: 45.0
