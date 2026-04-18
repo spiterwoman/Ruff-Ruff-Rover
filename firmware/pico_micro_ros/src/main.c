@@ -3,6 +3,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
+#include <time.h>
 
 #include <geometry_msgs/msg/twist.h>
 #include <geometry_msgs/msg/vector3.h>
@@ -84,7 +85,19 @@ static sensor_msgs__msg__Range g_right_range_msg;
 static std_msgs__msg__Bool g_heartbeat_msg;
 static geometry_msgs__msg__Vector3 g_wheel_state_msg;
 
-bool pico_usb_transport_open(struct uxrCustomTransport * transport) {
+int clock_gettime(clockid_t clock_id, struct timespec * tp) {
+    (void)clock_id;
+    if (tp == NULL) {
+        return -1;
+    }
+
+    uint64_t now_us = time_us_64();
+    tp->tv_sec = (time_t)(now_us / 1000000ULL);
+    tp->tv_nsec = (long)((now_us % 1000000ULL) * 1000ULL);
+    return 0;
+}
+
+bool pico_usb_transport_open(struct uxrCustomTransport` * transport) {
     (void)transport;
     stdio_init_all();
     sleep_ms(2000);

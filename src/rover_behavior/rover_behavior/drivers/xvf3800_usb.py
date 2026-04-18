@@ -14,8 +14,10 @@ except Exception:
 
 
 RESPEAKER_VID = 0x2886
-RESPEAKER_PID = 0x0018
+SUPPORTED_PRODUCT_IDS = (0x001A, 0x0018)
 RESPEAKER_NAME_HINTS = (
+    "XVF3800",
+    "USB 4 Mic Array",
     "ReSpeaker 4 Mic Array",
     "ReSpeaker",
     "UAC1.0",
@@ -36,9 +38,25 @@ class ReSpeakerUSBError(RuntimeError):
 
 @dataclass
 class TuningSnapshot:
-    doa_angle_deg: Optional[float]
+    doa_deg: Optional[float]
     voice_activity: Optional[bool]
     speech_detected: Optional[bool]
+
+    @property
+    def doa_angle_deg(self) -> Optional[float]:
+        return self.doa_deg
+
+
+def _find_usb_device(vid: int = RESPEAKER_VID, pid: Optional[int] = None):
+    if usb is None:
+        raise ReSpeakerUSBError("pyusb is not installed.")
+    if pid is not None:
+        return usb.core.find(idVendor=vid, idProduct=pid)
+    devices = usb.core.find(find_all=True, idVendor=vid)
+    for dev in devices or []:
+        if int(getattr(dev, "idProduct", -1)) in SUPPORTED_PRODUCT_IDS:
+            return dev
+    return None
 
 
 class ReSpeakerTuning:
@@ -50,17 +68,16 @@ class ReSpeakerTuning:
         self.dev = dev
 
     @classmethod
-    def find(cls, vid: int = RESPEAKER_VID, pid: int = RESPEAKER_PID) -> "ReSpeakerTuning":
+    def find(cls, vid: int = RESPEAKER_VID, pid: Optional[int] = None) -> "ReSpeakerTuning":
         if usb is None:
-            raise ReSpeakerUSBError("pyusb is not installed. Install with: pip install pyusb")
+            raise ReSpeakerUSBError("pyusb is not installed.")
 
-        dev = usb.core.find(idVendor=vid, idProduct=pid)
+        dev = _find_usb_device(vid=vid, pid=pid)
         if dev is None:
             raise ReSpeakerUSBError(
-                "ReSpeaker USB Mic Array not found over USB. "
+                "ReSpeaker/XVF3800 USB Mic Array not found over USB. "
                 "Check the cable, permissions, and that the board is powered."
             )
-        print("success")
         return cls(dev)
 
     def _read(self, name: str):
@@ -128,6 +145,7 @@ class ReSpeakerTuning:
     def set_agc_enabled(self, enabled: bool) -> None:
         self._write("AGCONOFF", 1 if enabled else 0)
 
+    @property
     def snapshot(self) -> TuningSnapshot:
         doa = None
         vad = None
@@ -148,7 +166,7 @@ class ReSpeakerTuning:
         except Exception:
             pass
 
-        return TuningSnapshot(doa_angle_deg=doa, voice_activity=vad, speech_detected=speech)
+        return TuningSnapshot(doa_deg=doa, voice_activity=vad, speech_detected=speech)
 
     def close(self) -> None:
         if usb is not None:
@@ -164,13 +182,13 @@ class PixelRing:
         self.dev = dev
 
     @classmethod
-    def find(cls, vid: int = RESPEAKER_VID, pid: int = RESPEAKER_PID) -> "PixelRing":
+    def find(cls, vid: int = RESPEAKER_VID, pid: Optional[int] = None) -> "PixelRing":
         if usb is None:
-            raise ReSpeakerUSBError("pyusb is not installed. Install with: pip install pyusb")
+            raise ReSpeakerUSBError("pyusb is not installed.")
 
-        dev = usb.core.find(idVendor=vid, idProduct=pid)
+        dev = _find_usb_device(vid=vid, pid=pid)
         if dev is None:
-            raise ReSpeakerUSBError("ReSpeaker USB Mic Array not found over USB.")
+            raise ReSpeakerUSBError("ReSpeaker/XVF3800 USB Mic Array not found over USB.")
         return cls(dev)
 
     def _write(self, command: int, data=None) -> None:
@@ -254,6 +272,13 @@ def find_respeaker_input_device_index(pyaudio_instance) -> int:
         "Run a device list first and verify the board is connected."
     )
 
+
+XVF3800Tuning = ReSpeakerTuning
+
+
+def find_xvf3800_input_device_index(pyaudio_instance) -> int:
+    return find_respeaker_input_device_index(pyaudio_instance)
+
 if __name__ == "__main__":
     print("Initializing Ruff-Ruff-Rover Audio Driver...")
     ears = None
@@ -263,7 +288,7 @@ if __name__ == "__main__":
         print("✅ Success! Monitoring sound direction. Press Ctrl+C to stop.\n")
         
         while True:
-            data = ears.snapshot()
+            data = ears.snapshot
             if data.doa_angle_deg is not None:
                 # \r overwrites the line for a cleaner "Live" terminal view
                 status = f"Angle: {data.doa_angle_deg:3.0f}° | Voice: {'YES' if data.voice_activity else 'NO '} | Speech: {'YES' if data.speech_detected else 'NO '}"
