@@ -27,6 +27,10 @@ class TurnToWhistleTestNode(Node):
         self.declare_parameter("control_rate_hz", 20.0)
         self.declare_parameter("turn_tolerance_deg", 10.0)
         self.declare_parameter("turn_speed_rad_s", 0.7)
+        default_turn_speed = float(self.get_parameter("turn_speed_rad_s").value)
+        self.declare_parameter("turn_angular_kp", 0.8)
+        self.declare_parameter("max_angular_speed_rad_s", default_turn_speed)
+        self.declare_parameter("min_turn_speed_rad_s", min(0.15, default_turn_speed))
         self.declare_parameter("turn_timeout_s", 8.0)
         self.declare_parameter("odom_timeout_s", 1.0)
 
@@ -76,6 +80,18 @@ class TurnToWhistleTestNode(Node):
         msg = Twist()
         msg.angular.z = float(angular)
         self.cmd_pub.publish(msg)
+
+    def _turn_command(self, error: float) -> float:
+        angular = float(self.get_parameter("turn_angular_kp").value) * error
+        max_speed = float(self.get_parameter("max_angular_speed_rad_s").value)
+        if max_speed <= 0.0:
+            return 0.0
+        angular = max(-max_speed, min(max_speed, angular))
+
+        min_speed = min(float(self.get_parameter("min_turn_speed_rad_s").value), max_speed)
+        if min_speed > 0.0 and abs(angular) < min_speed:
+            angular = math.copysign(min_speed, angular if angular != 0.0 else error)
+        return angular
 
     def _stop(self) -> None:
         self._publish_cmd(0.0)
@@ -139,8 +155,7 @@ class TurnToWhistleTestNode(Node):
             self._set_state(TurnState.ALIGNED)
             return
 
-        turn_speed = float(self.get_parameter("turn_speed_rad_s").value)
-        self._publish_cmd(turn_speed if error > 0.0 else -turn_speed)
+        self._publish_cmd(self._turn_command(error))
 
 
 def main(args=None) -> None:

@@ -31,6 +31,7 @@ class MicWhistleNode(Node):
         self.declare_parameter("chunk", 1024)
         self.declare_parameter("channels", 2)
         self.declare_parameter("detect_channel", 0)
+        self.declare_parameter("use_frequency_gate", False)
         self.declare_parameter("band_min_hz", 1800.0)
         self.declare_parameter("band_max_hz", 4500.0)
         self.declare_parameter("min_rms", 700.0)
@@ -108,6 +109,7 @@ class MicWhistleNode(Node):
                 input_device_index=device_index,
             )
             whistle_cfg = WhistleConfig(
+                use_frequency_gate=bool(self.get_parameter("use_frequency_gate").value),
                 band_min_hz=float(self.get_parameter("band_min_hz").value),
                 band_max_hz=float(self.get_parameter("band_max_hz").value),
                 min_rms=float(self.get_parameter("min_rms").value),

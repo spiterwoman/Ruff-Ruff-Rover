@@ -5,6 +5,7 @@ mic_whistle_node:
     chunk: 1024
     channels: 2
     detect_channel: 0
+    use_frequency_gate: false
     band_min_hz: 1800.0
     band_max_hz: 4500.0
     min_rms: 700.0
@@ -56,6 +57,7 @@ follow_whistler_node:
     control_rate_hz: 20.0
     turn_tolerance_deg: 10.0
     turn_speed_rad_s: 0.7
+    turn_angular_kp: 0.8
     search_turn_speed_rad_s: 0.55
     search_sweep_extent_deg: 35.0
     acquire_timeout_s: 5.0
@@ -70,6 +72,7 @@ follow_whistler_node:
     max_linear_speed_mps: 0.35
     min_linear_speed_mps: 0.08
     max_angular_speed_rad_s: 0.9
+    min_turn_speed_rad_s: 0.15
     soft_avoid_distance_m: 0.60
     hard_stop_distance_m: 0.35
     avoid_turn_speed_rad_s: 0.7
@@ -79,6 +82,9 @@ turn_to_whistle_test_node:
     control_rate_hz: 20.0
     turn_tolerance_deg: 10.0
     turn_speed_rad_s: 0.7
+    turn_angular_kp: 0.8
+    max_angular_speed_rad_s: 0.7
+    min_turn_speed_rad_s: 0.15
     turn_timeout_s: 8.0
     odom_timeout_s: 1.0
 
@@ -91,6 +97,7 @@ self_test_node:
     pulse_duration_s: 0.35
     settle_duration_s: 0.35
     min_wheel_position_delta: 0.05
+    wheel_base_m: 0.23
     left_forward_sign: 1.0
     right_forward_sign: 1.0
     range_min_valid_m: 0.02

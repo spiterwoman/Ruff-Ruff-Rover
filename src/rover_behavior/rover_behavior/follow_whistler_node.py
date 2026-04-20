@@ -31,6 +31,7 @@ class FollowWhistlerNode(Node):
         self.declare_parameter("control_rate_hz", 20.0)
         self.declare_parameter("turn_tolerance_deg", 10.0)
         self.declare_parameter("turn_speed_rad_s", 0.7)
+        self.declare_parameter("turn_angular_kp", 0.8)
         self.declare_parameter("search_turn_speed_rad_s", 0.55)
         self.declare_parameter("search_sweep_extent_deg", 35.0)
         self.declare_parameter("acquire_timeout_s", 5.0)
@@ -45,6 +46,7 @@ class FollowWhistlerNode(Node):
         self.declare_parameter("max_linear_speed_mps", 0.35)
         self.declare_parameter("min_linear_speed_mps", 0.08)
         self.declare_parameter("max_angular_speed_rad_s", 0.9)
+        self.declare_parameter("min_turn_speed_rad_s", 0.15)
         self.declare_parameter("soft_avoid_distance_m", 0.60)
         self.declare_parameter("hard_stop_distance_m", 0.35)
         self.declare_parameter("avoid_turn_speed_rad_s", 0.7)
@@ -152,6 +154,18 @@ class FollowWhistlerNode(Node):
         twist.linear.x = float(linear)
         twist.angular.z = float(angular)
         self.cmd_pub.publish(twist)
+
+    def _turn_command(self, error: float) -> float:
+        angular = float(self.get_parameter("turn_angular_kp").value) * error
+        angular_limit = float(self.get_parameter("max_angular_speed_rad_s").value)
+        if angular_limit <= 0.0:
+            return 0.0
+        angular = max(-angular_limit, min(angular_limit, angular))
+
+        min_turn_speed = min(float(self.get_parameter("min_turn_speed_rad_s").value), angular_limit)
+        if min_turn_speed > 0.0 and abs(angular) < min_turn_speed:
+            angular = math.copysign(min_turn_speed, angular if angular != 0.0 else error)
+        return angular
 
     def _track_is_fresh(self) -> bool:
         if self.latest_track is None or self.track_stamp is None:
@@ -282,8 +296,7 @@ class FollowWhistlerNode(Node):
                 self._set_state(BehaviorState.ACQUIRE)
                 self._publish_cmd(0.0, 0.0)
                 return
-            turn_speed = float(self.get_parameter("turn_speed_rad_s").value)
-            self._publish_cmd(0.0, turn_speed if error > 0.0 else -turn_speed)
+            self._publish_cmd(0.0, self._turn_command(error))
             return
 
         if self.state == BehaviorState.ACQUIRE:

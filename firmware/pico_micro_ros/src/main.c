@@ -3,7 +3,6 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
-#include <time.h>
 
 #include <geometry_msgs/msg/twist.h>
 #include <geometry_msgs/msg/vector3.h>
@@ -16,26 +15,26 @@
 #include <rosidl_runtime_c/string_functions.h>
 #include <sensor_msgs/msg/range.h>
 #include <std_msgs/msg/bool.h>
-#include <uxr/client/profile/transport/custom/custom_transport.h>
 
 #include "hardware/gpio.h"
 #include "hardware/i2c.h"
 #include "hardware/pwm.h"
 #include "pico/stdlib.h"
+#include "pico_uart_transports.h"
 
 #define PWM_LEFT_PIN 15
 #define DIR_LEFT_PIN 14
 #define PWM_RIGHT_PIN 16
 #define DIR_RIGHT_PIN 17
 
-#define ENC_LEFT_A_PIN 0
-#define ENC_LEFT_B_PIN 1
+#define ENC_LEFT_A_PIN 4
+#define ENC_LEFT_B_PIN 13
 #define ENC_RIGHT_A_PIN 2
 #define ENC_RIGHT_B_PIN 3
 
 #define I2C_PORT i2c0
-#define I2C_SDA_PIN 4
-#define I2C_SCL_PIN 5
+#define I2C_SDA_PIN 6
+#define I2C_SCL_PIN 7
 #define XSHUT_LEFT_PIN 8
 #define XSHUT_RIGHT_PIN 9
 #define TOF_DEFAULT_ADDR 0x29
@@ -47,14 +46,19 @@
 #define MAX_WHEEL_SPEED_MPS 0.45f
 #define WHEEL_BASE_M 0.23f
 #define TICKS_PER_METER 820.0f
+#define LEFT_MOTOR_SIGN 1.0f
+#define RIGHT_MOTOR_SIGN -1.0f
 #define DEADMAN_TIMEOUT_US 250000ULL
 #define TOF_MIN_RANGE_M 0.02f
 #define TOF_MAX_RANGE_M 2.00f
 #define TOF_FOV_RAD 0.436332f
 #define INFRARED_RADIATION_TYPE 1
+#define I2C_TIMEOUT_US 5000
 
 static volatile int32_t g_left_ticks = 0;
 static volatile int32_t g_right_ticks = 0;
+static bool g_prev_left_a = false;
+static bool g_prev_right_a = false;
 
 static float g_cmd_linear = 0.0f;
 static float g_cmd_angular = 0.0f;
@@ -85,58 +89,10 @@ static sensor_msgs__msg__Range g_right_range_msg;
 static std_msgs__msg__Bool g_heartbeat_msg;
 static geometry_msgs__msg__Vector3 g_wheel_state_msg;
 
-int clock_gettime(clockid_t clock_id, struct timespec * tp) {
-    (void)clock_id;
-    if (tp == NULL) {
-        return -1;
-    }
-
-    uint64_t now_us = time_us_64();
-    tp->tv_sec = (time_t)(now_us / 1000000ULL);
-    tp->tv_nsec = (long)((now_us % 1000000ULL) * 1000ULL);
-    return 0;
-}
-
-bool pico_usb_transport_open(struct uxrCustomTransport` * transport) {
-    (void)transport;
-    stdio_init_all();
-    sleep_ms(2000);
-    return true;
-}
-
-bool pico_usb_transport_close(struct uxrCustomTransport * transport) {
-    (void)transport;
-    return true;
-}
-
-size_t pico_usb_transport_write(struct uxrCustomTransport * transport, const uint8_t * buf, size_t len, uint8_t * errcode) {
-    (void)transport;
-    (void)errcode;
-    for (size_t i = 0; i < len; ++i) {
-        putchar_raw(buf[i]);
-    }
-    return len;
-}
-
-size_t pico_usb_transport_read(struct uxrCustomTransport * transport, uint8_t * buf, size_t len, int timeout, uint8_t * errcode) {
-    (void)transport;
-    (void)errcode;
-    absolute_time_t deadline = make_timeout_time_ms(timeout);
-    size_t read_count = 0;
-    while (read_count < len) {
-        int value = getchar_timeout_us(1000);
-        if (value == PICO_ERROR_TIMEOUT) {
-            if (absolute_time_diff_us(get_absolute_time(), deadline) >= 0) {
-                break;
-            }
-            continue;
-        }
-        buf[read_count++] = (uint8_t)value;
-    }
-    return read_count;
-}
-
 static void set_motor_output(float left, float right) {
+    left *= LEFT_MOTOR_SIGN;
+    right *= RIGHT_MOTOR_SIGN;
+
     if (left > 1.0f) {
         left = 1.0f;
     }
@@ -172,23 +128,6 @@ static void drive_from_command(void) {
     float right_velocity = g_cmd_linear + (g_cmd_angular * WHEEL_BASE_M * 0.5f);
 
     set_motor_output(left_velocity / MAX_WHEEL_SPEED_MPS, right_velocity / MAX_WHEEL_SPEED_MPS);
-}
-
-static void encoder_irq(uint gpio, uint32_t events) {
-    (void)events;
-    if (gpio == ENC_LEFT_A_PIN) {
-        if (gpio_get(ENC_LEFT_A_PIN) != gpio_get(ENC_LEFT_B_PIN)) {
-            g_left_ticks++;
-        } else {
-            g_left_ticks--;
-        }
-    } else if (gpio == ENC_RIGHT_A_PIN) {
-        if (gpio_get(ENC_RIGHT_A_PIN) != gpio_get(ENC_RIGHT_B_PIN)) {
-            g_right_ticks++;
-        } else {
-            g_right_ticks--;
-        }
-    }
 }
 
 static void setup_motors(void) {
@@ -227,19 +166,47 @@ static void setup_encoders(void) {
     gpio_set_dir(ENC_RIGHT_B_PIN, GPIO_IN);
     gpio_pull_up(ENC_RIGHT_B_PIN);
 
-    gpio_set_irq_enabled_with_callback(ENC_LEFT_A_PIN, GPIO_IRQ_EDGE_RISE, true, &encoder_irq);
-    gpio_set_irq_enabled(ENC_RIGHT_A_PIN, GPIO_IRQ_EDGE_RISE, true);
+    // Seed initial A-channel state so first poll does not create a phantom tick.
+    g_prev_left_a = gpio_get(ENC_LEFT_A_PIN);
+    g_prev_right_a = gpio_get(ENC_RIGHT_A_PIN);
+}
+
+static void poll_encoders(void) {
+    bool current_left_a = gpio_get(ENC_LEFT_A_PIN);
+    bool current_right_a = gpio_get(ENC_RIGHT_A_PIN);
+
+    if (current_left_a && !g_prev_left_a) {
+        if (gpio_get(ENC_LEFT_B_PIN)) {
+            g_left_ticks++;
+        } else {
+            g_left_ticks--;
+        }
+    }
+
+    if (current_right_a && !g_prev_right_a) {
+        if (gpio_get(ENC_RIGHT_B_PIN)) {
+            g_right_ticks++;
+        } else {
+            g_right_ticks--;
+        }
+    }
+
+    g_prev_left_a = current_left_a;
+    g_prev_right_a = current_right_a;
 }
 
 static bool i2c_write_bytes(uint8_t addr, const uint8_t * data, size_t len) {
-    return i2c_write_blocking(I2C_PORT, addr, data, len, false) == (int)len;
+    int written = i2c_write_timeout_us(I2C_PORT, addr, data, len, false, I2C_TIMEOUT_US);
+    return written == (int)len;
 }
 
 static bool i2c_read_bytes(uint8_t addr, uint8_t reg, uint8_t * data, size_t len) {
-    if (i2c_write_blocking(I2C_PORT, addr, &reg, 1, true) != 1) {
+    int wrote_reg = i2c_write_timeout_us(I2C_PORT, addr, &reg, 1, true, I2C_TIMEOUT_US);
+    if (wrote_reg != 1) {
         return false;
     }
-    return i2c_read_blocking(I2C_PORT, addr, data, len, false) == (int)len;
+    int read_len = i2c_read_timeout_us(I2C_PORT, addr, data, len, false, I2C_TIMEOUT_US);
+    return read_len == (int)len;
 }
 
 static bool vl53_write_reg(uint8_t addr, uint8_t reg, uint8_t value) {
@@ -420,25 +387,26 @@ static void init_messages(void) {
 }
 
 int main(void) {
-    setup_motors();
-    setup_encoders();
-    setup_tof_sensors();
-    stop_motors();
     g_last_cmd_us = time_us_64();
 
     rmw_uros_set_custom_transport(
         true,
         NULL,
-        pico_usb_transport_open,
-        pico_usb_transport_close,
-        pico_usb_transport_write,
-        pico_usb_transport_read
+        pico_serial_transport_open,
+        pico_serial_transport_close,
+        pico_serial_transport_write,
+        pico_serial_transport_read
     );
 
     while (rmw_uros_ping_agent(1000, 1) != RCL_RET_OK) {
-        stop_motors();
         sleep_ms(500);
     }
+
+    // Defer hardware initialization until the transport handshake succeeds.
+    // This avoids startup failures from motor/encoder wiring side effects.
+    setup_motors();
+    stop_motors();
+    setup_encoders();
 
     rcl_allocator_t allocator = rcl_get_default_allocator();
     rclc_support_t support;
@@ -499,11 +467,16 @@ int main(void) {
         publish_callback
     );
 
+    // Bring up ToF sensors after the ROS session is established so sensor
+    // issues cannot prevent heartbeat/odom connectivity.
+    setup_tof_sensors();
+
     rclc_executor_init(&executor, &support.context, 2, &allocator);
     rclc_executor_add_subscription(&executor, &g_cmd_sub, &g_cmd_msg, &cmd_callback, ON_NEW_DATA);
     rclc_executor_add_timer(&executor, &g_publish_timer);
 
     while (true) {
+        poll_encoders();
         rclc_executor_spin_some(&executor, RCL_MS_TO_NS(20));
     }
 

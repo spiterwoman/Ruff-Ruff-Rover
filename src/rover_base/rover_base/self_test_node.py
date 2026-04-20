@@ -33,6 +33,7 @@ class SelfTestNode(Node):
         self.declare_parameter("pulse_duration_s", 0.35)
         self.declare_parameter("settle_duration_s", 0.35)
         self.declare_parameter("min_wheel_position_delta", 0.05)
+        self.declare_parameter("wheel_base_m", 0.23)
         self.declare_parameter("left_forward_sign", 1.0)
         self.declare_parameter("right_forward_sign", 1.0)
         self.declare_parameter("range_min_valid_m", 0.02)
@@ -157,19 +158,23 @@ class SelfTestNode(Node):
     def _zero_cmd(self) -> None:
         self.cmd_pub.publish(Twist())
 
-    def _left_only_cmd(self) -> Twist:
-        speed = float(self.get_parameter("pulse_speed").value)
+    def _single_wheel_cmd(self, side: str) -> Twist:
+        wheel_speed = float(self.get_parameter("pulse_speed").value)
+        wheel_base = float(self.get_parameter("wheel_base_m").value)
         cmd = Twist()
-        cmd.linear.x = speed
-        cmd.angular.z = -speed
+        if wheel_base <= 0.0:
+            return cmd
+
+        # For differential drive, this keeps the non-target wheel near zero.
+        cmd.linear.x = 0.5 * wheel_speed
+        cmd.angular.z = (wheel_speed / wheel_base) * (-1.0 if side == "left" else 1.0)
         return cmd
 
+    def _left_only_cmd(self) -> Twist:
+        return self._single_wheel_cmd("left")
+
     def _right_only_cmd(self) -> Twist:
-        speed = float(self.get_parameter("pulse_speed").value)
-        cmd = Twist()
-        cmd.linear.x = speed
-        cmd.angular.z = speed
-        return cmd
+        return self._single_wheel_cmd("right")
 
     def _capture_baseline(self) -> None:
         self.baseline_left = self.left_position
@@ -178,19 +183,34 @@ class SelfTestNode(Node):
     def _phase_elapsed(self) -> float:
         return (self.get_clock().now() - self.phase_started_at).nanoseconds / 1e9
 
-    def _check_wheel_delta(self, side: str) -> bool:
+    def _wheel_deltas(self) -> Optional[tuple[float, float]]:
         if self.baseline_left is None or self.baseline_right is None:
-            return False
+            return None
         if self.left_position is None or self.right_position is None:
-            return False
+            return None
+
+        return (
+            self.left_position - self.baseline_left,
+            self.right_position - self.baseline_right,
+        )
+
+    def _check_wheel_delta(self, side: str) -> tuple[bool, str]:
+        deltas = self._wheel_deltas()
+        if deltas is None:
+            return False, "wheel positions unavailable"
+
         min_delta = float(self.get_parameter("min_wheel_position_delta").value)
-        left_delta = self.left_position - self.baseline_left
-        right_delta = self.right_position - self.baseline_right
+        left_delta, right_delta = deltas
+        detail = f"left_delta={left_delta:.3f} right_delta={right_delta:.3f}"
+
         if side == "left":
             expected = float(self.get_parameter("left_forward_sign").value)
-            return abs(left_delta) >= min_delta and left_delta * expected > 0.0
+            ok = abs(left_delta) >= min_delta and left_delta * expected > 0.0
+            return ok, detail
+
         expected = float(self.get_parameter("right_forward_sign").value)
-        return abs(right_delta) >= min_delta and right_delta * expected > 0.0
+        ok = abs(right_delta) >= min_delta and right_delta * expected > 0.0
+        return ok, detail
 
     def _mark_fail(self, detail: str) -> None:
         self._zero_cmd()
@@ -241,8 +261,9 @@ class SelfTestNode(Node):
         if self.phase == SelfTestPhase.LEFT_SETTLE:
             if self._phase_elapsed() < settle_duration:
                 return
-            if not self._check_wheel_delta("left"):
-                self._mark_fail("left wheel encoder check failed")
+            left_ok, detail = self._check_wheel_delta("left")
+            if not left_ok:
+                self._mark_fail(f"left wheel encoder check failed ({detail})")
                 return
             self._capture_baseline()
             self._set_phase(SelfTestPhase.RIGHT_PULSE)
@@ -259,8 +280,9 @@ class SelfTestNode(Node):
         if self.phase == SelfTestPhase.RIGHT_SETTLE:
             if self._phase_elapsed() < settle_duration:
                 return
-            if not self._check_wheel_delta("right"):
-                self._mark_fail("right wheel encoder check failed")
+            right_ok, detail = self._check_wheel_delta("right")
+            if not right_ok:
+                self._mark_fail(f"right wheel encoder check failed ({detail})")
                 return
             self._zero_cmd()
             self._publish_ready(True)

@@ -16,9 +16,9 @@ Current Pico firmware expects these pins:
 - Left motor direction: `GP14`
 - Right motor PWM: `GP16`
 - Right motor direction: `GP17`
-- Left encoder A/B: `GP0`, `GP1`
+- Left encoder A/B: `GP4`, `GP13`
 - Right encoder A/B: `GP2`, `GP3`
-- I2C SDA/SCL: `GP4`, `GP5`
+- I2C SDA/SCL: `GP6`, `GP7`
 - Left ToF `XSHUT`: `GP8`
 - Right ToF `XSHUT`: `GP9`
 

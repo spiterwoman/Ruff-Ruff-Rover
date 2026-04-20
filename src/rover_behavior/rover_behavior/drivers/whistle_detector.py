@@ -24,6 +24,7 @@ class AudioConfig:
 
 @dataclass
 class WhistleConfig:
+    use_frequency_gate: bool = False
     band_min_hz: float = 1800.0
     band_max_hz: float = 4500.0
     min_rms: float = 700.0
@@ -52,8 +53,11 @@ class NarrowBandWhistleDetector:
         self.whistle_cfg = whistle_cfg
         self.window = np.hanning(audio_cfg.chunk).astype(np.float32)
         self.freqs = np.fft.rfftfreq(audio_cfg.chunk, d=1.0 / audio_cfg.rate)
-        self.band_mask = (self.freqs >= whistle_cfg.band_min_hz) & (self.freqs <= whistle_cfg.band_max_hz)
         self.total_mask = (self.freqs >= 200.0) & (self.freqs <= 6000.0)
+        if whistle_cfg.use_frequency_gate:
+            self.band_mask = (self.freqs >= whistle_cfg.band_min_hz) & (self.freqs <= whistle_cfg.band_max_hz)
+        else:
+            self.band_mask = self.total_mask.copy()
         self._consecutive_hits = 0
         self._last_peak_freq_hz: Optional[float] = None
         self._last_event_time = 0.0

@@ -253,23 +253,41 @@ def circular_mean_deg(angles_deg: list[float]) -> Optional[float]:
     return (math.degrees(math.atan2(y, x)) + 360.0) % 360.0
 
 
-def find_respeaker_input_device_index(pyaudio_instance) -> int:
-    """Find the ReSpeaker input device index from PyAudio."""
-    host_info = pyaudio_instance.get_host_api_info_by_index(0)
-    device_count = int(host_info.get("deviceCount", 0))
-
-    for i in range(device_count):
-        info = pyaudio_instance.get_device_info_by_host_api_device_index(0, i)
-        name = str(info.get("name", ""))
+def list_input_devices(pyaudio_instance) -> list[dict]:
+    devices = []
+    for index in range(pyaudio_instance.get_device_count()):
+        info = pyaudio_instance.get_device_info_by_index(index)
         max_inputs = int(info.get("maxInputChannels", 0))
         if max_inputs <= 0:
             continue
+        devices.append(
+            {
+                "index": int(info.get("index", index)),
+                "name": str(info.get("name", "")),
+                "max_input_channels": max_inputs,
+                "host_api": int(info.get("hostApi", -1)),
+            }
+        )
+    return devices
+
+
+def find_respeaker_input_device_index(pyaudio_instance) -> int:
+    """Find the ReSpeaker input device index from PyAudio."""
+    input_devices = list_input_devices(pyaudio_instance)
+
+    for info in input_devices:
+        name = info["name"]
         if any(hint.lower() in name.lower() for hint in RESPEAKER_NAME_HINTS):
-            return i
+            return int(info["index"])
+
+    available = ", ".join(
+        f"{info['index']}:{info['name']}({info['max_input_channels']}ch)"
+        for info in input_devices
+    ) or "none"
 
     raise ReSpeakerUSBError(
         "Could not find a ReSpeaker input device in PyAudio. "
-        "Run a device list first and verify the board is connected."
+        f"Available input devices: {available}"
     )
 
 
