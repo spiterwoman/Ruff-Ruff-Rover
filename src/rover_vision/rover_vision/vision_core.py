@@ -132,6 +132,14 @@ class VisionProcessor:
 
         return selected
 
+    def detect_people_for_debug(self, frame) -> list[Candidate]:
+        if not self.ensure_runtime():
+            return []
+        detections = self._detect_people(frame)
+        if self.face_detector is not None and self.face_recognizer is not None:
+            self._apply_face_information(frame, detections)
+        return detections
+
     def empty_track_data(self) -> dict:
         return {
             "visible": False,
@@ -165,6 +173,88 @@ class VisionProcessor:
             "detection_confidence": float(candidate.confidence),
             "face_similarity": float(candidate.face_similarity),
         }
+
+    def annotate_frame(
+        self,
+        frame,
+        detections: list[Candidate],
+        selected: Optional[Candidate] = None,
+        active_whistle_doa_deg: Optional[float] = None,
+    ):
+        if cv2 is None:
+            return frame
+
+        annotated = frame.copy()
+        for detection in detections:
+            is_selected = selected is not None and self._iou(detection.bbox, selected.bbox) >= 0.7
+            color = (0, 255, 0) if is_selected else (0, 180, 255)
+            x_value, y_value, width_value, height_value = [int(round(value)) for value in detection.bbox]
+            x_value = max(0, x_value)
+            y_value = max(0, y_value)
+            width_value = max(1, width_value)
+            height_value = max(1, height_value)
+            cv2.rectangle(
+                annotated,
+                (x_value, y_value),
+                (x_value + width_value, y_value + height_value),
+                color,
+                2,
+            )
+
+            label = (
+                f"person {detection.confidence:.2f} "
+                f"b={detection.bearing_deg:+.1f} "
+                f"r={detection.range_estimate_m:.1f}m"
+            )
+            if detection.face_similarity > 0.0:
+                label += f" face={detection.face_similarity:.2f}"
+            cv2.putText(
+                annotated,
+                label,
+                (x_value, max(18, y_value - 8)),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.5,
+                color,
+                1,
+                cv2.LINE_AA,
+            )
+
+        header_lines = []
+        if active_whistle_doa_deg is None:
+            header_lines.append("whistle: none")
+        else:
+            header_lines.append(f"whistle: {active_whistle_doa_deg:+.1f} deg")
+        if selected is None:
+            header_lines.append("selected: none")
+        else:
+            header_lines.append(
+                f"selected bearing={selected.bearing_deg:+.1f} deg range={selected.range_estimate_m:.1f} m"
+            )
+
+        for index, text in enumerate(header_lines):
+            y_value = 24 + (index * 22)
+            cv2.putText(
+                annotated,
+                text,
+                (12, y_value),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.6,
+                (255, 255, 255),
+                2,
+                cv2.LINE_AA,
+            )
+            cv2.putText(
+                annotated,
+                text,
+                (12, y_value),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.6,
+                (20, 20, 20),
+                1,
+                cv2.LINE_AA,
+            )
+
+        return annotated
 
     def _ensure_detector(self) -> bool:
         if self.detector is not None:

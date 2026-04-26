@@ -34,9 +34,18 @@ def resolve_model_path(path_value: str) -> str:
 
 
 class VisionBridgeServer:
-    def __init__(self, config: VisionConfig) -> None:
+    def __init__(
+        self,
+        config: VisionConfig,
+        show_preview: bool = False,
+        preview_detect_without_whistle: bool = True,
+        preview_max_width: int = 1280,
+    ) -> None:
         self.processor = VisionProcessor(config)
         self.lock = threading.Lock()
+        self.show_preview = show_preview
+        self.preview_detect_without_whistle = preview_detect_without_whistle
+        self.preview_max_width = max(320, int(preview_max_width))
 
     def infer(self, image_jpeg_b64: str, whistle_epoch: int, whistle_doa_deg) -> dict:
         if np is None or cv2 is None:
@@ -75,17 +84,47 @@ class VisionBridgeServer:
                 }
             try:
                 candidate = self.processor.process_frame(frame)
+                debug_detections = []
+                if self.show_preview and self.preview_detect_without_whistle:
+                    debug_detections = self.processor.detect_people_for_debug(frame)
+                elif self.show_preview and candidate is not None:
+                    debug_detections = [candidate]
             except Exception as exc:
                 return {
                     "ready": False,
                     "error": f"vision processing failed: {exc}",
                     "track": self.processor.empty_track_data(),
                 }
+            if self.show_preview:
+                self._show_preview(
+                    frame=frame,
+                    detections=debug_detections,
+                    selected=candidate,
+                    whistle_doa_deg=whistle_doa_deg,
+                )
 
         return {
             "ready": True,
             "track": self.processor.candidate_to_track_data(candidate),
         }
+
+    def _show_preview(self, frame, detections, selected, whistle_doa_deg) -> None:
+        preview = self.processor.annotate_frame(
+            frame,
+            detections=detections,
+            selected=selected,
+            active_whistle_doa_deg=whistle_doa_deg,
+        )
+        height_value, width_value = preview.shape[:2]
+        if width_value > self.preview_max_width:
+            scale = self.preview_max_width / float(width_value)
+            preview = cv2.resize(
+                preview,
+                (int(width_value * scale), int(height_value * scale)),
+                interpolation=cv2.INTER_AREA,
+            )
+        cv2.imshow("Ruff-Ruff-Rover Vision Bridge", preview)
+        cv2.waitKey(1)
 
 
 class VisionBridgeRequestHandler(BaseHTTPRequestHandler):
@@ -161,6 +200,22 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--host", default="0.0.0.0", help="Bind address for the HTTP server")
     parser.add_argument("--port", default=8765, type=int, help="Port for the HTTP server")
+    parser.add_argument(
+        "--show-preview",
+        action="store_true",
+        help="Show a live OpenCV preview window with detections overlaid",
+    )
+    parser.add_argument(
+        "--preview-max-width",
+        default=1280,
+        type=int,
+        help="Maximum width for the preview window before downscaling",
+    )
+    parser.add_argument(
+        "--preview-selected-only",
+        action="store_true",
+        help="Only draw the currently selected target, not all YOLO detections",
+    )
     return parser.parse_args()
 
 
@@ -170,7 +225,12 @@ def main() -> None:
     config = build_config(params)
 
     server = ThreadingHTTPServer((args.host, args.port), VisionBridgeRequestHandler)
-    server.bridge = VisionBridgeServer(config)  # type: ignore[attr-defined]
+    server.bridge = VisionBridgeServer(  # type: ignore[attr-defined]
+        config,
+        show_preview=bool(args.show_preview),
+        preview_detect_without_whistle=not bool(args.preview_selected_only),
+        preview_max_width=int(args.preview_max_width),
+    )
     print(f"Vision bridge server listening on http://{args.host}:{args.port}")
     print("Waiting for Pi requests...")
     try:
@@ -178,6 +238,8 @@ def main() -> None:
     except KeyboardInterrupt:
         print("\nShutting down vision bridge server.")
     finally:
+        if cv2 is not None and bool(args.show_preview):
+            cv2.destroyAllWindows()
         server.server_close()
 
 

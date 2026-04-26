@@ -41,7 +41,7 @@ vision_target_node:
     image_topic: /camera/image/compressed
     image_timeout_s: 1.0
     detect_every_n_frames: 3
-    yolo_model: yolo11n.pt
+    yolo_model: models/yolo11n.pt
     yolo_imgsz: 416
     yolo_confidence: 0.35
     person_width_m: 0.45
@@ -58,7 +58,7 @@ vision_bridge_client_node:
     frame_rate_hz: 5.0
     image_timeout_s: 1.0
     request_timeout_s: 2.0
-    server_host: 127.0.0.1
+    server_host: 192.168.86.97
     server_port: 8765
     server_path: /infer
     status_log_period_s: 2.0

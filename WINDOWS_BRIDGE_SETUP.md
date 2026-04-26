@@ -109,6 +109,22 @@ From the repo root on Windows:
 python tools\vision_bridge_server.py --params-file src\rover_bringup\config\rover_params.yaml --host 0.0.0.0 --port 8765
 ```
 
+If you want to see the incoming camera stream on the Windows PC with YOLO boxes
+drawn on top, start the server in preview mode:
+
+```powershell
+.\.venv\Scripts\Activate.ps1
+python tools\vision_bridge_server.py --params-file src\rover_bringup\config\rover_params.yaml --host 0.0.0.0 --port 8765 --show-preview
+```
+
+That preview window is the easiest way to tune exposure and confirm detections.
+By default it draws all current YOLO person detections, even before a whistle
+has happened. If you only want to see the currently selected tracked target, use:
+
+```powershell
+python tools\vision_bridge_server.py --params-file src\rover_bringup\config\rover_params.yaml --host 0.0.0.0 --port 8765 --show-preview --preview-selected-only
+```
+
 If Windows Defender asks about firewall access, allow it on your private
 network.
 
@@ -168,6 +184,8 @@ Expected:
 - `/camera/ready` becomes `true`
 - `/vision/ready` becomes `true` once the Windows server is reachable and the models load
 - `/target_track` stays invisible until a whistle happens or a previous tracked target remains active
+- if `--show-preview` is enabled, the Windows PC opens a live camera window with
+  YOLO boxes overlaid
 
 ## 6. Full Robot Flow
 
