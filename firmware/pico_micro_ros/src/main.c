@@ -47,7 +47,9 @@
 #define WHEEL_BASE_M 0.23f
 #define TICKS_PER_METER 820.0f
 #define LEFT_MOTOR_SIGN 1.0f
-#define RIGHT_MOTOR_SIGN -1.0f
+#define RIGHT_MOTOR_SIGN 1.0f
+#define LEFT_ENCODER_SIGN -1.0f
+#define RIGHT_ENCODER_SIGN 1.0f
 #define DEADMAN_TIMEOUT_US 250000ULL
 #define TOF_MIN_RANGE_M 0.02f
 #define TOF_MAX_RANGE_M 2.00f
@@ -57,8 +59,6 @@
 
 static volatile int32_t g_left_ticks = 0;
 static volatile int32_t g_right_ticks = 0;
-static bool g_prev_left_a = false;
-static bool g_prev_right_a = false;
 
 static float g_cmd_linear = 0.0f;
 static float g_cmd_angular = 0.0f;
@@ -88,6 +88,8 @@ static sensor_msgs__msg__Range g_left_range_msg;
 static sensor_msgs__msg__Range g_right_range_msg;
 static std_msgs__msg__Bool g_heartbeat_msg;
 static geometry_msgs__msg__Vector3 g_wheel_state_msg;
+
+static void encoder_irq(uint gpio, uint32_t events);
 
 static void set_motor_output(float left, float right) {
     left *= LEFT_MOTOR_SIGN;
@@ -166,33 +168,28 @@ static void setup_encoders(void) {
     gpio_set_dir(ENC_RIGHT_B_PIN, GPIO_IN);
     gpio_pull_up(ENC_RIGHT_B_PIN);
 
-    // Seed initial A-channel state so first poll does not create a phantom tick.
-    g_prev_left_a = gpio_get(ENC_LEFT_A_PIN);
-    g_prev_right_a = gpio_get(ENC_RIGHT_A_PIN);
+    // Use IRQ capture on encoder A so wheel odometry stays accurate at
+    // realistic wheel speeds; slow polling misses edges and aliases badly.
+    gpio_set_irq_enabled_with_callback(ENC_LEFT_A_PIN, GPIO_IRQ_EDGE_RISE, true, &encoder_irq);
+    gpio_set_irq_enabled(ENC_RIGHT_A_PIN, GPIO_IRQ_EDGE_RISE, true);
 }
 
-static void poll_encoders(void) {
-    bool current_left_a = gpio_get(ENC_LEFT_A_PIN);
-    bool current_right_a = gpio_get(ENC_RIGHT_A_PIN);
+static void encoder_irq(uint gpio, uint32_t events) {
+    (void)events;
 
-    if (current_left_a && !g_prev_left_a) {
+    if (gpio == ENC_LEFT_A_PIN) {
         if (gpio_get(ENC_LEFT_B_PIN)) {
             g_left_ticks++;
         } else {
             g_left_ticks--;
         }
-    }
-
-    if (current_right_a && !g_prev_right_a) {
+    } else if (gpio == ENC_RIGHT_A_PIN) {
         if (gpio_get(ENC_RIGHT_B_PIN)) {
             g_right_ticks++;
         } else {
             g_right_ticks--;
         }
     }
-
-    g_prev_left_a = current_left_a;
-    g_prev_right_a = current_right_a;
 }
 
 static bool i2c_write_bytes(uint8_t addr, const uint8_t * data, size_t len) {
@@ -279,8 +276,8 @@ static void update_odometry(void) {
         return;
     }
 
-    int32_t current_left = g_left_ticks;
-    int32_t current_right = g_right_ticks;
+    int32_t current_left = (int32_t)(LEFT_ENCODER_SIGN * (float)g_left_ticks);
+    int32_t current_right = (int32_t)(RIGHT_ENCODER_SIGN * (float)g_right_ticks);
 
     float left_delta = (float)(current_left - g_prev_left_ticks) / TICKS_PER_METER;
     float right_delta = (float)(current_right - g_prev_right_ticks) / TICKS_PER_METER;
@@ -476,7 +473,6 @@ int main(void) {
     rclc_executor_add_timer(&executor, &g_publish_timer);
 
     while (true) {
-        poll_encoders();
         rclc_executor_spin_some(&executor, RCL_MS_TO_NS(20));
     }
 

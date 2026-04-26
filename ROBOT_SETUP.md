@@ -8,6 +8,10 @@ This robot uses:
 
 The Pi and laptop must be on the same Wi-Fi network.
 
+If you want to run vision on a Windows PC without ROS 2 networking, use
+[WINDOWS_BRIDGE_SETUP.md](./WINDOWS_BRIDGE_SETUP.md) instead of the laptop ROS
+steps below.
+
 ## 1. Hardware Layout
 
 Current Pico firmware expects these pins:

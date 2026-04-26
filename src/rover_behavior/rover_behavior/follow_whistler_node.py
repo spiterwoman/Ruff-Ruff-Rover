@@ -46,7 +46,15 @@ class FollowWhistlerNode(Node):
         self.declare_parameter("max_linear_speed_mps", 0.35)
         self.declare_parameter("min_linear_speed_mps", 0.08)
         self.declare_parameter("max_angular_speed_rad_s", 0.9)
-        self.declare_parameter("min_turn_speed_rad_s", 0.15)
+        self.declare_parameter("min_turn_speed_rad_s", 0.5)
+        self.declare_parameter("use_open_loop_turn", False)
+        self.declare_parameter("turn_timeout_s", 8.0)
+        self.declare_parameter("turn_timeout_scale", 1.5)
+        self.declare_parameter("turn_timeout_padding_s", 0.5)
+        self.declare_parameter("turn_divergence_grace_s", 0.35)
+        self.declare_parameter("turn_divergence_margin_deg", 10.0)
+        self.declare_parameter("turn_allow_direction_recovery", True)
+        self.declare_parameter("turn_debug_log_period_s", 0.5)
         self.declare_parameter("soft_avoid_distance_m", 0.60)
         self.declare_parameter("hard_stop_distance_m", 0.35)
         self.declare_parameter("avoid_turn_speed_rad_s", 0.7)
@@ -85,6 +93,15 @@ class FollowWhistlerNode(Node):
         self.search_target_heading = 0.0
         self.state_entered_at = self.get_clock().now()
         self.last_seen_target_heading = 0.0
+        self.turn_started_at = self.state_entered_at
+        self.turn_initial_error_abs = 0.0
+        self.turn_best_error_abs = math.inf
+        self.turn_output_sign = 1.0
+        self.turn_reversed_once = False
+        self.turn_last_log_at = self.state_entered_at
+        self.turn_requested_angle = 0.0
+        self.turn_duration_s = 0.0
+        self.turn_command_angular = 0.0
         self._publish_state()
 
         period = 1.0 / float(self.get_parameter("control_rate_hz").value)
@@ -105,7 +122,24 @@ class FollowWhistlerNode(Node):
             return
         if self.state not in (BehaviorState.IDLE, BehaviorState.ARRIVED):
             return
-        self.turn_target_heading = self._normalize_angle(self.current_yaw + math.radians(msg.doa_deg))
+        self.turn_requested_angle = math.radians(msg.doa_deg)
+        self.turn_target_heading = self._normalize_angle(self.current_yaw + self.turn_requested_angle)
+        self.turn_initial_error_abs = abs(self.turn_requested_angle)
+        self.turn_best_error_abs = self.turn_initial_error_abs
+        self.turn_output_sign = 1.0
+        self.turn_reversed_once = False
+        self.turn_started_at = self.get_clock().now()
+        self.turn_last_log_at = self.turn_started_at
+        if self._use_open_loop_turn():
+            turn_speed = self._open_loop_turn_speed()
+            if turn_speed <= 0.0:
+                self.get_logger().warning("Ignoring whistle because turn_speed_rad_s is not positive.")
+                return
+            self.turn_duration_s = self.turn_initial_error_abs / turn_speed
+            self.turn_command_angular = math.copysign(turn_speed, self.turn_requested_angle) if self.turn_initial_error_abs > 0.0 else 0.0
+        else:
+            self.turn_duration_s = 0.0
+            self.turn_command_angular = 0.0
         self.search_center_heading = self.turn_target_heading
         self.search_leg = 0
         self._set_state(BehaviorState.TURN_TO_DOA)
@@ -134,6 +168,9 @@ class FollowWhistlerNode(Node):
             return
         self.state = state
         self.state_entered_at = self.get_clock().now()
+        if state == BehaviorState.TURN_TO_DOA:
+            self.turn_started_at = self.state_entered_at
+            self.turn_last_log_at = self.state_entered_at
         if state in (BehaviorState.ACQUIRE, BehaviorState.REACQUIRE):
             self.search_leg = 0
         self._publish_state()
@@ -148,6 +185,9 @@ class FollowWhistlerNode(Node):
         while value < -math.pi:
             value += 2.0 * math.pi
         return value
+
+    def _use_open_loop_turn(self) -> bool:
+        return bool(self.get_parameter("use_open_loop_turn").value)
 
     def _publish_cmd(self, linear: float, angular: float) -> None:
         twist = Twist()
@@ -165,7 +205,49 @@ class FollowWhistlerNode(Node):
         min_turn_speed = min(float(self.get_parameter("min_turn_speed_rad_s").value), angular_limit)
         if min_turn_speed > 0.0 and abs(angular) < min_turn_speed:
             angular = math.copysign(min_turn_speed, angular if angular != 0.0 else error)
-        return angular
+        return self.turn_output_sign * angular
+
+    def _open_loop_turn_speed(self) -> float:
+        speed = abs(float(self.get_parameter("turn_speed_rad_s").value))
+        if speed <= 0.0:
+            speed = abs(float(self.get_parameter("max_angular_speed_rad_s").value))
+        return speed
+
+    def _effective_turn_timeout(self) -> float:
+        min_turn_speed = min(
+            float(self.get_parameter("min_turn_speed_rad_s").value),
+            float(self.get_parameter("max_angular_speed_rad_s").value),
+        )
+        if min_turn_speed <= 0.0:
+            return float(self.get_parameter("turn_timeout_s").value)
+
+        expected = self.turn_initial_error_abs / min_turn_speed
+        scaled = (
+            expected * float(self.get_parameter("turn_timeout_scale").value)
+            + float(self.get_parameter("turn_timeout_padding_s").value)
+        )
+        return min(float(self.get_parameter("turn_timeout_s").value), max(0.5, scaled))
+
+    def _maybe_log_turn_progress(self, elapsed: float, error: float, command: float) -> None:
+        period = float(self.get_parameter("turn_debug_log_period_s").value)
+        if period <= 0.0:
+            return
+        now = self.get_clock().now()
+        since_last = (now - self.turn_last_log_at).nanoseconds / 1e9
+        if since_last < period:
+            return
+        self.turn_last_log_at = now
+        self.get_logger().info(
+            "Turn-to-DOA: yaw=%.1f target=%.1f error=%.1f cmd=%.2f elapsed=%.2fs recovered=%s"
+            % (
+                math.degrees(self.current_yaw),
+                math.degrees(self.turn_target_heading),
+                math.degrees(error),
+                command,
+                elapsed,
+                self.turn_reversed_once,
+            )
+        )
 
     def _track_is_fresh(self) -> bool:
         if self.latest_track is None or self.track_stamp is None:
@@ -290,13 +372,57 @@ class FollowWhistlerNode(Node):
             return
 
         if self.state == BehaviorState.TURN_TO_DOA:
-            error = self._normalize_angle(self.turn_target_heading - self.current_yaw)
+            elapsed = (self.get_clock().now() - self.turn_started_at).nanoseconds / 1e9
             tolerance = math.radians(float(self.get_parameter("turn_tolerance_deg").value))
-            if abs(error) <= tolerance:
+
+            if self._use_open_loop_turn():
+                if self.turn_initial_error_abs <= tolerance or elapsed >= self.turn_duration_s:
+                    self._set_state(BehaviorState.ACQUIRE)
+                    self._publish_cmd(0.0, 0.0)
+                    return
+
+                command = self.turn_command_angular
+                self._maybe_log_turn_progress(elapsed, self.turn_requested_angle, command)
+                self._publish_cmd(0.0, command)
+                return
+
+            error = self._normalize_angle(self.turn_target_heading - self.current_yaw)
+            error_abs = abs(error)
+            if error_abs < self.turn_best_error_abs:
+                self.turn_best_error_abs = error_abs
+
+            if elapsed > self._effective_turn_timeout():
+                self.get_logger().warning(
+                    "Turn-to-DOA timeout after %.2fs for requested %.1f deg; returning to IDLE."
+                    % (elapsed, math.degrees(self.turn_initial_error_abs))
+                )
+                self._set_state(BehaviorState.IDLE)
+                self._publish_cmd(0.0, 0.0)
+                return
+
+            grace_s = float(self.get_parameter("turn_divergence_grace_s").value)
+            divergence_margin = math.radians(float(self.get_parameter("turn_divergence_margin_deg").value))
+            if (
+                bool(self.get_parameter("turn_allow_direction_recovery").value)
+                and not self.turn_reversed_once
+                and elapsed >= grace_s
+                and error_abs > self.turn_best_error_abs + divergence_margin
+            ):
+                self.turn_output_sign *= -1.0
+                self.turn_reversed_once = True
+                self.turn_best_error_abs = error_abs
+                self.get_logger().warning(
+                    "Turn-to-DOA error diverged to %.1f deg while targeting %.1f deg; reversing turn command sign."
+                    % (math.degrees(error_abs), math.degrees(self.turn_initial_error_abs))
+                )
+
+            if error_abs <= tolerance:
                 self._set_state(BehaviorState.ACQUIRE)
                 self._publish_cmd(0.0, 0.0)
                 return
-            self._publish_cmd(0.0, self._turn_command(error))
+            command = self._turn_command(error)
+            self._maybe_log_turn_progress(elapsed, error, command)
+            self._publish_cmd(0.0, command)
             return
 
         if self.state == BehaviorState.ACQUIRE:

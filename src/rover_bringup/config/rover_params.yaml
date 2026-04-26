@@ -5,10 +5,10 @@ mic_whistle_node:
     chunk: 1024
     channels: 2
     detect_channel: 0
-    use_frequency_gate: false
-    band_min_hz: 1800.0
-    band_max_hz: 4500.0
-    min_rms: 700.0
+    use_frequency_gate: true
+    band_min_hz: 1200.0
+    band_max_hz: 1900.0
+    min_rms: 500.0
     min_band_ratio: 0.45
     min_peak_ratio: 0.18
     min_prominence_db: 12.0
@@ -17,8 +17,8 @@ mic_whistle_node:
     use_usb_control: true
     doa_samples: 5
     doa_sample_delay_s: 0.03
-    doa_offset_deg: 0.0
-    doa_clockwise_positive: true
+    doa_offset_deg: -90.0
+    doa_clockwise_positive: false
 
 camera_stream_node:
   ros__parameters:
@@ -52,12 +52,24 @@ vision_target_node:
     yunet_model_path: models/face_detection_yunet_2023mar.onnx
     sface_model_path: models/face_recognition_sface_2021dec.onnx
 
+vision_bridge_client_node:
+  ros__parameters:
+    image_topic: /camera/image/compressed
+    frame_rate_hz: 5.0
+    image_timeout_s: 1.0
+    request_timeout_s: 2.0
+    server_host: 127.0.0.1
+    server_port: 8765
+    server_path: /infer
+    status_log_period_s: 2.0
+
 follow_whistler_node:
   ros__parameters:
     control_rate_hz: 20.0
     turn_tolerance_deg: 10.0
     turn_speed_rad_s: 0.7
     turn_angular_kp: 0.8
+    use_open_loop_turn: true
     search_turn_speed_rad_s: 0.55
     search_sweep_extent_deg: 35.0
     acquire_timeout_s: 5.0
@@ -72,7 +84,14 @@ follow_whistler_node:
     max_linear_speed_mps: 0.35
     min_linear_speed_mps: 0.08
     max_angular_speed_rad_s: 0.9
-    min_turn_speed_rad_s: 0.15
+    min_turn_speed_rad_s: 0.5
+    turn_timeout_s: 8.0
+    turn_timeout_scale: 1.5
+    turn_timeout_padding_s: 0.5
+    turn_divergence_grace_s: 0.35
+    turn_divergence_margin_deg: 10.0
+    turn_allow_direction_recovery: true
+    turn_debug_log_period_s: 0.5
     soft_avoid_distance_m: 0.60
     hard_stop_distance_m: 0.35
     avoid_turn_speed_rad_s: 0.7
@@ -83,10 +102,25 @@ turn_to_whistle_test_node:
     turn_tolerance_deg: 10.0
     turn_speed_rad_s: 0.7
     turn_angular_kp: 0.8
+    use_open_loop_turn: true
     max_angular_speed_rad_s: 0.7
-    min_turn_speed_rad_s: 0.15
+    min_turn_speed_rad_s: 0.5
     turn_timeout_s: 8.0
+    turn_timeout_scale: 1.5
+    turn_timeout_padding_s: 0.5
+    turn_divergence_grace_s: 0.35
+    turn_divergence_margin_deg: 10.0
+    turn_allow_direction_recovery: true
+    turn_debug_log_period_s: 0.5
     odom_timeout_s: 1.0
+    drive_forward_after_turn: true
+    forward_speed_mps: 0.18
+    forward_stop_distance_m: 0.45
+    forward_timeout_s: 8.0
+    range_timeout_s: 1.0
+    forward_range_source: front_center
+    front_center_sensor: front_left
+    forward_debug_log_period_s: 0.5
 
 self_test_node:
   ros__parameters:

@@ -13,9 +13,6 @@ setup(
     ],
     install_requires=[
         'setuptools',
-        'numpy',
-        'opencv-python',
-        'ultralytics',
     ],
     zip_safe=True,
     maintainer='mmamd',
@@ -30,6 +27,7 @@ setup(
     entry_points={
         'console_scripts': [
             'vision_target_node = rover_vision.vision_target_node:main',
+            'vision_bridge_client_node = rover_vision.vision_bridge_client_node:main',
         ],
     },
 )
