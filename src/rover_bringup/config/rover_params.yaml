@@ -29,6 +29,20 @@ camera_stream_node:
     jpeg_quality: 80
     frame_id: camera_optical_frame
     image_topic: /camera/image/compressed
+    auto_exposure_mode: 3.0
+    exposure: -1.0
+    gain: -1.0
+    brightness: -1.0
+    contrast: -1.0
+    saturation: -1.0
+    sharpness: -1.0
+    gamma: -1.0
+    backlight_compensation: -1.0
+    auto_white_balance: true
+    white_balance_temperature: -1.0
+    auto_focus: true
+    focus: -1.0
+    log_camera_settings_on_apply: true
 
 vision_target_node:
   ros__parameters:
@@ -55,9 +69,10 @@ vision_target_node:
 vision_bridge_client_node:
   ros__parameters:
     image_topic: /camera/image/compressed
-    frame_rate_hz: 5.0
+    frame_rate_hz: 10.0
     image_timeout_s: 1.0
     request_timeout_s: 2.0
+    max_consecutive_failures: 3
     server_host: 192.168.86.97
     server_port: 8765
     server_path: /infer
@@ -67,24 +82,24 @@ follow_whistler_node:
   ros__parameters:
     control_rate_hz: 20.0
     turn_tolerance_deg: 10.0
-    turn_speed_rad_s: 0.7
+    turn_speed_rad_s: 1.0
     turn_angular_kp: 0.8
     use_open_loop_turn: true
-    search_turn_speed_rad_s: 0.55
+    search_turn_speed_rad_s: 0.8
     search_sweep_extent_deg: 35.0
     acquire_timeout_s: 5.0
     reacquire_timeout_s: 8.0
     target_timeout_s: 0.75
     range_timeout_s: 1.0
-    arrival_range_m: 1.0
-    arrival_bbox_width_px: 560.0
+    arrival_range_m: 0.25
+    arrival_bbox_width_px: 1200.0
     center_tolerance_norm: 0.08
     linear_kp: 0.5
     angular_kp: 1.2
     max_linear_speed_mps: 0.35
     min_linear_speed_mps: 0.08
-    max_angular_speed_rad_s: 0.9
-    min_turn_speed_rad_s: 0.5
+    max_angular_speed_rad_s: 1.2
+    min_turn_speed_rad_s: 0.7
     turn_timeout_s: 8.0
     turn_timeout_scale: 1.5
     turn_timeout_padding_s: 0.5
@@ -92,19 +107,19 @@ follow_whistler_node:
     turn_divergence_margin_deg: 10.0
     turn_allow_direction_recovery: true
     turn_debug_log_period_s: 0.5
-    soft_avoid_distance_m: 0.60
-    hard_stop_distance_m: 0.35
+    soft_avoid_distance_m: 0.08
+    hard_stop_distance_m: 0.04
     avoid_turn_speed_rad_s: 0.7
 
 turn_to_whistle_test_node:
   ros__parameters:
     control_rate_hz: 20.0
     turn_tolerance_deg: 10.0
-    turn_speed_rad_s: 0.7
+    turn_speed_rad_s: 1.0
     turn_angular_kp: 0.8
     use_open_loop_turn: true
-    max_angular_speed_rad_s: 0.7
-    min_turn_speed_rad_s: 0.5
+    max_angular_speed_rad_s: 1.0
+    min_turn_speed_rad_s: 0.7
     turn_timeout_s: 8.0
     turn_timeout_scale: 1.5
     turn_timeout_padding_s: 0.5
@@ -134,5 +149,8 @@ self_test_node:
     wheel_base_m: 0.23
     left_forward_sign: 1.0
     right_forward_sign: 1.0
+    perform_wheel_encoder_check: false
     range_min_valid_m: 0.02
     range_max_valid_m: 2.0
+    require_range_sensors: false
+    dependency_loss_grace_s: 3.0

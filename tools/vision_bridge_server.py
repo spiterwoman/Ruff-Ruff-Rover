@@ -7,7 +7,7 @@ import json
 import sys
 import threading
 from http import HTTPStatus
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
 import yaml
@@ -224,7 +224,7 @@ def main() -> None:
     params = load_params(Path(args.params_file))
     config = build_config(params)
 
-    server = ThreadingHTTPServer((args.host, args.port), VisionBridgeRequestHandler)
+    server = HTTPServer((args.host, args.port), VisionBridgeRequestHandler)
     server.bridge = VisionBridgeServer(  # type: ignore[attr-defined]
         config,
         show_preview=bool(args.show_preview),

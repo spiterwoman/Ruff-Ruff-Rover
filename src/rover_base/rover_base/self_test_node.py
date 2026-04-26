@@ -36,8 +36,11 @@ class SelfTestNode(Node):
         self.declare_parameter("wheel_base_m", 0.23)
         self.declare_parameter("left_forward_sign", 1.0)
         self.declare_parameter("right_forward_sign", 1.0)
+        self.declare_parameter("perform_wheel_encoder_check", False)
         self.declare_parameter("range_min_valid_m", 0.02)
         self.declare_parameter("range_max_valid_m", 2.0)
+        self.declare_parameter("require_range_sensors", False)
+        self.declare_parameter("dependency_loss_grace_s", 3.0)
 
         latch_qos = QoSProfile(
             history=HistoryPolicy.KEEP_LAST,
@@ -76,6 +79,10 @@ class SelfTestNode(Node):
         self.right_position: Optional[float] = None
         self.baseline_left: Optional[float] = None
         self.baseline_right: Optional[float] = None
+        self.range_warning_logged = False
+        self.wheel_check_skip_logged = False
+        self.dependency_loss_started_at = None
+        self.dependency_loss_warned = False
         self._publish_ready(False)
         self._publish_status(self.phase)
         self.create_timer(0.05, self._tick)
@@ -140,6 +147,40 @@ class SelfTestNode(Node):
         max_value = float(self.get_parameter("range_max_valid_m").value)
         return min_value <= self.left_range <= max_value and min_value <= self.right_range <= max_value
 
+    def _range_status_detail(self) -> str:
+        timeout_value = float(self.get_parameter("sensor_timeout_s").value)
+        left_fresh = self._stamp_fresh(self.left_range_stamp, timeout_value)
+        right_fresh = self._stamp_fresh(self.right_range_stamp, timeout_value)
+        min_value = float(self.get_parameter("range_min_valid_m").value)
+        max_value = float(self.get_parameter("range_max_valid_m").value)
+
+        left_text = "missing" if not left_fresh else f"{self.left_range:.2f}m"
+        right_text = "missing" if not right_fresh else f"{self.right_range:.2f}m"
+
+        detail = f"front_left={left_text} front_right={right_text}"
+        if left_fresh or right_fresh:
+            detail += f" expected_range=[{min_value:.2f}, {max_value:.2f}]m"
+        return detail
+
+    def _maybe_warn_missing_ranges(self) -> None:
+        if bool(self.get_parameter("require_range_sensors").value):
+            return
+        if self.range_warning_logged:
+            return
+        self.range_warning_logged = True
+        self.get_logger().warning(
+            "Range sensors are optional and currently unavailable or invalid; continuing without them (%s)."
+            % self._range_status_detail()
+        )
+
+    def _range_dependency_ready(self) -> bool:
+        if self._ranges_valid():
+            return True
+        if bool(self.get_parameter("require_range_sensors").value):
+            return False
+        self._maybe_warn_missing_ranges()
+        return True
+
     def _dependencies_ready(self) -> bool:
         sensor_timeout = float(self.get_parameter("sensor_timeout_s").value)
         heartbeat_timeout = float(self.get_parameter("heartbeat_timeout_s").value)
@@ -147,7 +188,7 @@ class SelfTestNode(Node):
             self._stamp_fresh(self.heartbeat_stamp, heartbeat_timeout)
             and self._stamp_fresh(self.odom_stamp, sensor_timeout)
             and self._stamp_fresh(self.joint_stamp, sensor_timeout)
-            and self._ranges_valid()
+            and self._range_dependency_ready()
             and self.camera_ready
             and self.vision_ready
             and self.whistle_ready
@@ -217,21 +258,46 @@ class SelfTestNode(Node):
         self._publish_ready(False)
         self._set_phase(SelfTestPhase.FAIL, detail)
 
+    def _note_dependency_state(self, dependencies_ready: bool) -> bool:
+        if dependencies_ready:
+            if self.dependency_loss_started_at is not None and self.dependency_loss_warned:
+                self.get_logger().info("Dependencies recovered.")
+            self.dependency_loss_started_at = None
+            self.dependency_loss_warned = False
+            return False
+
+        if self.dependency_loss_started_at is None:
+            self.dependency_loss_started_at = self.get_clock().now()
+
+        elapsed = (self.get_clock().now() - self.dependency_loss_started_at).nanoseconds / 1e9
+        grace_s = float(self.get_parameter("dependency_loss_grace_s").value)
+        if not self.dependency_loss_warned:
+            self.get_logger().warning(
+                "Dependency lost; allowing %.1fs grace before failing self-test." % grace_s
+            )
+            self.dependency_loss_warned = True
+        return elapsed >= grace_s
+
     def _tick(self) -> None:
         if self.phase == SelfTestPhase.FAIL:
             self._zero_cmd()
             return
 
+        dependencies_ready = self._dependencies_ready()
+
         if self.phase == SelfTestPhase.READY:
-            if not self._dependencies_ready():
+            if self._note_dependency_state(dependencies_ready):
                 self._mark_fail("dependency lost")
                 return
             self._publish_ready(True)
             return
 
-        if self.phase != SelfTestPhase.WAITING and not self._dependencies_ready():
-            self._mark_fail("dependency lost during self-test")
-            return
+        if self.phase != SelfTestPhase.WAITING:
+            if self._note_dependency_state(dependencies_ready):
+                self._mark_fail("dependency lost during self-test")
+                return
+        else:
+            self._note_dependency_state(dependencies_ready)
 
         started_elapsed = (self.get_clock().now() - self.started_at).nanoseconds / 1e9
         if started_elapsed > float(self.get_parameter("startup_timeout_s").value):
@@ -240,8 +306,18 @@ class SelfTestNode(Node):
 
         if self.phase == SelfTestPhase.WAITING:
             self._publish_ready(False)
-            if not self._dependencies_ready():
+            if not dependencies_ready:
                 self._zero_cmd()
+                return
+            if not bool(self.get_parameter("perform_wheel_encoder_check").value):
+                if not self.wheel_check_skip_logged:
+                    self.wheel_check_skip_logged = True
+                    self.get_logger().warning(
+                        "Wheel encoder calibration check is disabled; continuing without motor pulse validation."
+                    )
+                self._zero_cmd()
+                self._publish_ready(True)
+                self._set_phase(SelfTestPhase.READY)
                 return
             self._capture_baseline()
             self._set_phase(SelfTestPhase.LEFT_PULSE)

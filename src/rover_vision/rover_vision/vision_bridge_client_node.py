@@ -26,6 +26,7 @@ class VisionBridgeClientNode(Node):
         self.declare_parameter("server_port", 8765)
         self.declare_parameter("server_path", "/infer")
         self.declare_parameter("status_log_period_s", 2.0)
+        self.declare_parameter("max_consecutive_failures", 3)
 
         latch_qos = QoSProfile(
             history=HistoryPolicy.KEEP_LAST,
@@ -57,6 +58,7 @@ class VisionBridgeClientNode(Node):
         self.ready = False
         self.last_status_log_at = self.get_clock().now()
         self.last_error = ""
+        self.consecutive_failures = 0
 
         period = 1.0 / max(0.1, float(self.get_parameter("frame_rate_hz").value))
         self.create_timer(period, self._tick)
@@ -134,7 +136,9 @@ class VisionBridgeClientNode(Node):
 
     def _tick(self) -> None:
         if not self._latest_image_is_fresh():
-            self._publish_ready(False)
+            self.consecutive_failures += 1
+            if self.consecutive_failures >= int(self.get_parameter("max_consecutive_failures").value):
+                self._publish_ready(False)
             self._publish_track(self._empty_track())
             return
 
@@ -158,7 +162,9 @@ class VisionBridgeClientNode(Node):
             ) as response:
                 body = response.read().decode("utf-8")
         except (urllib_error.URLError, TimeoutError, ConnectionError) as exc:
-            self._publish_ready(False)
+            self.consecutive_failures += 1
+            if self.consecutive_failures >= int(self.get_parameter("max_consecutive_failures").value):
+                self._publish_ready(False)
             self._publish_track(self._empty_track())
             self._log_status(f"Vision bridge request failed: {exc}")
             return
@@ -166,11 +172,14 @@ class VisionBridgeClientNode(Node):
         try:
             result = json.loads(body)
         except json.JSONDecodeError as exc:
-            self._publish_ready(False)
+            self.consecutive_failures += 1
+            if self.consecutive_failures >= int(self.get_parameter("max_consecutive_failures").value):
+                self._publish_ready(False)
             self._publish_track(self._empty_track())
             self._log_status(f"Vision bridge returned invalid JSON: {exc}")
             return
 
+        self.consecutive_failures = 0
         ready = bool(result.get("ready", False))
         self._publish_ready(ready)
         self._publish_track(result.get("track", self._empty_track()))
